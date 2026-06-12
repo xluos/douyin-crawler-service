@@ -31,7 +31,7 @@ Docker 默认配置：
 
 - 服务端口：`18099`
 - 数据目录：宿主机 `./data` 挂载到容器 `/app/data`
-- 采集引擎：构建时克隆 `https://github.com/xluos/DouYin_Spider.git` 的 `feature/anonymous-public-spider` 分支到 `/opt/DouYin_Spider`
+- 采集引擎：构建时克隆 `https://github.com/xluos/DouYin_Spider.git` 的固定提交 `d9766c9dd0f3bf801d3dd09facb1d24f2a1c5c53` 到 `/opt/DouYin_Spider`
 - 浏览器：Playwright 官方镜像内置 Chromium，`BROWSER_CHANNEL=""`
 
 如果要换 DouYin_Spider 来源：
@@ -39,8 +39,10 @@ Docker 默认配置：
 ```bash
 docker compose build \
   --build-arg DOUYIN_SPIDER_REPO=https://github.com/xluos/DouYin_Spider.git \
-  --build-arg DOUYIN_SPIDER_REF=feature/anonymous-public-spider
+  --build-arg DOUYIN_SPIDER_REF=d9766c9dd0f3bf801d3dd09facb1d24f2a1c5c53
 ```
+
+`DOUYIN_SPIDER_REF` 可以传分支、tag 或 commit SHA；生产发布默认使用 commit SHA，避免同一个服务提交在不同时间构建出不同镜像。
 
 ## GitHub Actions 自动发布
 

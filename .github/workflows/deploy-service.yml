@@ -22,6 +22,7 @@ jobs:
     env:
       IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
       IMAGE_LATEST: ghcr.io/${{ github.repository }}:latest
+      DOUYIN_SPIDER_REF: d9766c9dd0f3bf801d3dd09facb1d24f2a1c5c53
 
     steps:
       - name: Checkout
@@ -55,6 +56,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_REF }}
             ${{ env.IMAGE_LATEST }}
+          build-args: |
+            DOUYIN_SPIDER_REF=${{ env.DOUYIN_SPIDER_REF }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

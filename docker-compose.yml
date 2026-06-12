@@ -4,7 +4,7 @@ services:
       context: .
       args:
         DOUYIN_SPIDER_REPO: https://github.com/xluos/DouYin_Spider.git
-        DOUYIN_SPIDER_REF: feature/anonymous-public-spider
+        DOUYIN_SPIDER_REF: d9766c9dd0f3bf801d3dd09facb1d24f2a1c5c53
     image: douyin-crawler-service:local
     container_name: douyin-crawler-service
     restart: unless-stopped
