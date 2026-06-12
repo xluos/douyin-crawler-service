@@ -53,14 +53,19 @@ docker compose build \
 5. `docker compose up -d` 启动服务。
 6. 检查 `http://127.0.0.1:18099/health`。
 
-需要在 GitHub 仓库配置这些 Secrets：
+需要在 GitHub 仓库配置这些 Variables，路径是 `Settings` -> `Secrets and variables` -> `Actions` -> `Variables`，这些值后续可以二次查看：
 
 - `DEPLOY_HOST`
 - `DEPLOY_USER`
-- `DEPLOY_SSH_KEY`
 - `DEPLOY_PORT`，可选，不填默认 `22`
+- `DEPLOY_DIR`，可选，不填默认 `/opt/douyin-crawler-service`
+- `SERVICE_PORT`，可选，不填默认 `18099`
 
-`DEPLOY_HOST` 是部署服务器的公网 IP 或 DNS 名称。GitHub Secrets 保存后不可回显，仓库设置页看到空输入框是正常的；只能重新从云服务器控制台、DNS 记录、本机 `~/.ssh/config`、部署文档或原始记录里找回，再写入当前仓库。
+还需要配置这个 Secret，路径是 `Settings` -> `Secrets and variables` -> `Actions` -> `Secrets`：
+
+- `DEPLOY_SSH_KEY`
+
+`DEPLOY_HOST` 是部署服务器的公网 IP 或 DNS 名称，适合放在可见的 Variables 里。`DEPLOY_SSH_KEY` 是服务器私钥，不能放到可见变量里；Secret 保存后不可回显是正常设计，只能重新写入。
 
 默认部署目录是服务器 `/opt/douyin-crawler-service`，健康检查端口是 `18099`。workflow 会在服务器上生成 `docker-compose.deploy.yml`，其中只引用已构建好的 GHCR 镜像，不再在服务器上 build 源码。
 

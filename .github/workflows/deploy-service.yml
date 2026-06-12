@@ -64,16 +64,16 @@ jobs:
     needs: build
 
     env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      DEPLOY_DIR: /opt/douyin-crawler-service
-      SERVICE_PORT: 18099
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/opt/douyin-crawler-service' }}
+      SERVICE_PORT: ${{ vars.SERVICE_PORT || '18099' }}
       IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
 
     steps:
-      - name: Validate deployment secrets
+      - name: Validate deployment config
         run: |
           set -euo pipefail
           test -n "$DEPLOY_HOST"
