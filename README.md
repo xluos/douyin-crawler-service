@@ -49,7 +49,7 @@ docker compose build \
 1. GitHub Actions 构建 Docker 镜像。
 2. 推送到 GitHub Container Registry：`ghcr.io/xluos/douyin-crawler-service:<commit-sha>` 和 `latest`。
 3. SSH 到服务器。
-4. 服务器登录 GHCR，拉取指定 commit 镜像。
+4. 服务器匿名拉取公开 GHCR 镜像，不在部署机保存 GitHub token。
 5. `docker compose up -d` 启动服务。
 6. 检查 `http://127.0.0.1:18099/health`。
 
@@ -59,6 +59,8 @@ docker compose build \
 - `DEPLOY_USER`
 - `DEPLOY_SSH_KEY`
 - `DEPLOY_PORT`，可选，不填默认 `22`
+
+`DEPLOY_HOST` 是部署服务器的公网 IP 或 DNS 名称。GitHub Secrets 保存后不可回显，仓库设置页看到空输入框是正常的；只能重新从云服务器控制台、DNS 记录、本机 `~/.ssh/config`、部署文档或原始记录里找回，再写入当前仓库。
 
 默认部署目录是服务器 `/opt/douyin-crawler-service`，健康检查端口是 `18099`。workflow 会在服务器上生成 `docker-compose.deploy.yml`，其中只引用已构建好的 GHCR 镜像，不再在服务器上 build 源码。
 

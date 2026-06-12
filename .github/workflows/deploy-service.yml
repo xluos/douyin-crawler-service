@@ -15,21 +15,13 @@ permissions:
   packages: write
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
 
     env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      DEPLOY_DIR: /opt/douyin-crawler-service
-      SERVICE_PORT: 18099
       IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
       IMAGE_LATEST: ghcr.io/${{ github.repository }}:latest
-      GHCR_USERNAME: ${{ github.repository_owner }}
-      GHCR_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
@@ -44,13 +36,6 @@ jobs:
         run: |
           set -euo pipefail
           python -m compileall -q src
-
-      - name: Validate deployment secrets
-        run: |
-          set -euo pipefail
-          test -n "$DEPLOY_HOST"
-          test -n "$DEPLOY_USER"
-          test -n "$DEPLOY_SSH_KEY"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -73,6 +58,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_DIR: /opt/douyin-crawler-service
+      SERVICE_PORT: 18099
+      IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+    steps:
+      - name: Validate deployment secrets
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+
       - name: Configure SSH
         run: |
           set -euo pipefail
@@ -87,13 +94,11 @@ jobs:
           set -euo pipefail
           port="${DEPLOY_PORT:-22}"
           ssh -i ~/.ssh/deploy_key -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_DIR='$DEPLOY_DIR' SERVICE_PORT='$SERVICE_PORT' IMAGE_REF='$IMAGE_REF' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN='$GHCR_TOKEN' bash -s" <<'REMOTE'
+            "DEPLOY_DIR='$DEPLOY_DIR' SERVICE_PORT='$SERVICE_PORT' IMAGE_REF='$IMAGE_REF' bash -s" <<'REMOTE'
           set -euo pipefail
 
           mkdir -p "$DEPLOY_DIR/data"
           cd "$DEPLOY_DIR"
-
-          printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
           cat > docker-compose.deploy.yml <<COMPOSE
           services:
