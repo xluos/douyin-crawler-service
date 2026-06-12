@@ -49,7 +49,7 @@ docker compose build \
 1. GitHub Actions 构建 Docker 镜像。
 2. 推送到 GitHub Container Registry：`ghcr.io/xluos/douyin-crawler-service:<commit-sha>` 和 `latest`。
 3. SSH 到服务器。
-4. 服务器匿名拉取公开 GHCR 镜像，不在部署机保存 GitHub token。
+4. 服务器使用本次 workflow 的 `github.token` 临时登录 GHCR，拉取镜像后立即 `docker logout`。
 5. `docker compose up -d` 启动服务。
 6. 检查 `http://127.0.0.1:18099/health`。
 
