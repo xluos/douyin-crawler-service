@@ -7,7 +7,7 @@
 ```bash
 uv venv
 uv pip install -e .
-.venv/bin/uvicorn douyin_crawler_service.app:create_app --factory --host 127.0.0.1 --port 8099
+.venv/bin/douyin-crawler-service
 ```
 
 默认读取本机现有仓库：
@@ -18,21 +18,56 @@ DOUYIN_SPIDER_PATH=/Users/bytedance/Documents/AIWorkspace/douyin-tool-eval/vendo
 
 也可以在 `.env` 里覆盖。
 
-匿名 cookie 生成默认使用本机 Chrome。如果机器没有 Chrome，先安装 Chrome，或者后续把 `spider_adapter.py` 里的 Playwright 启动参数改成项目内浏览器。
+本机启动默认监听 `127.0.0.1:18099`，避开常见开发端口。匿名 cookie 生成默认使用本机 Chrome；容器部署时会把 `BROWSER_CHANNEL` 置空，改用 Playwright 镜像内置 Chromium。
+
+## Docker 部署
+
+```bash
+docker compose up -d --build
+curl http://127.0.0.1:18099/health
+```
+
+Docker 默认配置：
+
+- 服务端口：`18099`
+- 数据目录：宿主机 `./data` 挂载到容器 `/app/data`
+- 采集引擎：构建时克隆 `https://github.com/xluos/DouYin_Spider.git` 的 `feature/anonymous-public-spider` 分支到 `/opt/DouYin_Spider`
+- 浏览器：Playwright 官方镜像内置 Chromium，`BROWSER_CHANNEL=""`
+
+如果要换 DouYin_Spider 来源：
+
+```bash
+docker compose build \
+  --build-arg DOUYIN_SPIDER_REPO=https://github.com/xluos/DouYin_Spider.git \
+  --build-arg DOUYIN_SPIDER_REF=feature/anonymous-public-spider
+```
+
+## GitHub Actions 自动发布
+
+`.github/workflows/deploy-service.yml` 会在 `main` 分支 push 后自动发布到服务器，逻辑参考 `outfit-master`：打包源码、SSH 上传、服务器上 `docker compose up -d --build`、最后检查 `/health`。
+
+需要在 GitHub 仓库配置这些 Secrets：
+
+- `DEPLOY_HOST`
+- `DEPLOY_USER`
+- `DEPLOY_SSH_KEY`
+- `DEPLOY_PORT`，可选，不填默认 `22`
+
+默认部署目录是服务器 `/opt/douyin-crawler-service`，健康检查端口是 `18099`。如果服务器上需要覆盖端口、镜像源或数据挂载，可以在部署目录维护 `docker-compose.prod.yml`，workflow 会自动叠加它。
 
 ## API
 
 ```bash
 # 健康检查
-curl http://127.0.0.1:8099/health
+curl http://127.0.0.1:18099/health
 
 # 创建匿名账号，服务会打开无头浏览器生成基础 cookie
-curl -X POST http://127.0.0.1:8099/accounts \
+curl -X POST http://127.0.0.1:18099/accounts \
   -H 'content-type: application/json' \
   -d '{"name":"anon-1","refresh_cookie":true}'
 
 # 创建采集任务
-curl -X POST http://127.0.0.1:8099/jobs \
+curl -X POST http://127.0.0.1:18099/jobs \
   -H 'content-type: application/json' \
   -d '{
     "account_id": 1,
@@ -45,19 +80,19 @@ curl -X POST http://127.0.0.1:8099/jobs \
   }'
 
 # 查询任务
-curl http://127.0.0.1:8099/jobs/1
+curl http://127.0.0.1:18099/jobs/1
 
 # 查询任务摘要
-curl http://127.0.0.1:8099/jobs/1/result
+curl http://127.0.0.1:18099/jobs/1/result
 
 # 查询任务事件
-curl http://127.0.0.1:8099/jobs/1/events
+curl http://127.0.0.1:18099/jobs/1/events
 
 # 查询任务日志
-curl 'http://127.0.0.1:8099/jobs/1/logs?lines=200'
+curl 'http://127.0.0.1:18099/jobs/1/logs?lines=200'
 
 # 查询带图片评论
-curl 'http://127.0.0.1:8099/jobs/1/comments?with_pictures=true&limit=20'
+curl 'http://127.0.0.1:18099/jobs/1/comments?with_pictures=true&limit=20'
 ```
 
 `max_pages` 最小为 1，避免误触发全量翻页；`max_comments_per_video=0` 表示只抓账号和作品，不抓评论。

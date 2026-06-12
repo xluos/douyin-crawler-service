@@ -1,0 +1,127 @@
+name: Deploy Service
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-service
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_DIR: /opt/douyin-crawler-service
+      SERVICE_PORT: 18099
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate Python sources
+        run: |
+          set -euo pipefail
+          python -m compileall -q src
+
+      - name: Validate deployment secrets
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_PORT:-22}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$port" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Package source
+        run: |
+          set -euo pipefail
+          tar \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='venv' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            --exclude='.ruff_cache' \
+            --exclude='data' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            -czf "/tmp/douyin-crawler-service-${GITHUB_SHA}.tar.gz" .
+
+      - name: Upload package
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_PORT:-22}"
+          scp -i ~/.ssh/deploy_key -P "$port" \
+            "/tmp/douyin-crawler-service-${GITHUB_SHA}.tar.gz" \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/douyin-crawler-service-${GITHUB_SHA}.tar.gz"
+
+      - name: Deploy on server
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_PORT:-22}"
+          ssh -i ~/.ssh/deploy_key -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "GITHUB_SHA='$GITHUB_SHA' DEPLOY_DIR='$DEPLOY_DIR' SERVICE_PORT='$SERVICE_PORT' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          package="/tmp/douyin-crawler-service-${GITHUB_SHA}.tar.gz"
+          release_dir="${DEPLOY_DIR}/releases/${GITHUB_SHA}"
+
+          mkdir -p "$release_dir" "$DEPLOY_DIR/releases" "$DEPLOY_DIR/data"
+          tar -xzf "$package" -C "$release_dir"
+
+          rsync -a --delete \
+            --exclude='releases' \
+            --exclude='data' \
+            --exclude='.env' \
+            --exclude='.env.local' \
+            --exclude='docker-compose.prod.yml' \
+            "$release_dir"/ "$DEPLOY_DIR"/
+
+          cd "$DEPLOY_DIR"
+
+          compose_args="-f docker-compose.yml"
+          if [ -f docker-compose.prod.yml ]; then
+            compose_args="$compose_args -f docker-compose.prod.yml"
+          fi
+
+          docker compose $compose_args up -d --build
+
+          healthy=0
+          for attempt in $(seq 1 40); do
+            if curl -fsS "http://127.0.0.1:${SERVICE_PORT}/health" >/dev/null; then
+              healthy=1
+              break
+            fi
+            sleep 3
+          done
+
+          if [ "$healthy" != "1" ]; then
+            docker compose $compose_args logs --tail=160 douyin-crawler-service
+            exit 1
+          fi
+
+          rm -f "$package"
+          find "$DEPLOY_DIR/releases" -mindepth 1 -maxdepth 1 -type d | sort | head -n -5 | xargs -r rm -rf
+          docker image prune -f --filter "until=168h" >/dev/null
+          REMOTE

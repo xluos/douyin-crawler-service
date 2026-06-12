@@ -1,0 +1,21 @@
+services:
+  douyin-crawler-service:
+    build:
+      context: .
+      args:
+        DOUYIN_SPIDER_REPO: https://github.com/xluos/DouYin_Spider.git
+        DOUYIN_SPIDER_REF: feature/anonymous-public-spider
+    image: douyin-crawler-service:local
+    container_name: douyin-crawler-service
+    restart: unless-stopped
+    environment:
+      DOUYIN_SPIDER_PATH: /opt/DouYin_Spider
+      SERVICE_DATA_DIR: /app/data
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 18099
+      BROWSER_CHANNEL: ""
+      WORKER_POLL_SECONDS: 1
+    ports:
+      - "18099:18099"
+    volumes:
+      - ./data:/app/data

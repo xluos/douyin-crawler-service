@@ -92,7 +92,10 @@ def create_app() -> FastAPI:
     configure_logging(settings)
 
     db = Database(settings.db_path)
-    engine = DouyinSpiderEngine(settings.douyin_spider_path)
+    engine = DouyinSpiderEngine(
+        settings.douyin_spider_path,
+        browser_channel=settings.playwright_browser_channel,
+    )
     queue_manager = QueueManager(db=db, engine=engine)
 
     @asynccontextmanager
@@ -102,9 +105,10 @@ def create_app() -> FastAPI:
         app.state.engine = engine
         app.state.queue_manager = queue_manager
         logger.info(
-            "service starting data_dir={} spider_path={}",
+            "service starting data_dir={} spider_path={} browser_channel={}",
             settings.service_data_dir,
             settings.douyin_spider_path,
+            settings.playwright_browser_channel or "playwright-default",
         )
         await queue_manager.start()
         try:
@@ -156,6 +160,7 @@ def create_app() -> FastAPI:
             "data_dir": str(settings.service_data_dir),
             "db_path": str(settings.db_path),
             "log_path": str(settings.service_data_dir / "logs" / "service.log"),
+            "browser_channel": settings.playwright_browser_channel or "playwright-default",
         }
 
     @app.post("/accounts", response_model=AccountOut)

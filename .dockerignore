@@ -1,0 +1,16 @@
+.DS_Store
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+data/
+dist/
+build/
+.cache/
+*.log

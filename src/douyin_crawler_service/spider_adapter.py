@@ -61,8 +61,9 @@ def extract_comment_image_urls(comment: dict[str, Any]) -> list[str]:
 
 
 class DouyinSpiderEngine:
-    def __init__(self, spider_path: Path):
+    def __init__(self, spider_path: Path, *, browser_channel: str | None = "chrome"):
         self.spider_path = spider_path.resolve()
+        self.browser_channel = browser_channel
         if not self.spider_path.exists():
             raise FileNotFoundError(f"DouYin_Spider path does not exist: {self.spider_path}")
         if str(self.spider_path) not in sys.path:
@@ -84,13 +85,19 @@ class DouyinSpiderEngine:
                 query_params = parse_qs(urlparse(url).query)
                 webid = (query_params.get("webid") or [None])[0]
 
-        logger.info("generating anonymous douyin cookie from {}", seed_user_url)
+        logger.info(
+            "generating anonymous douyin cookie from {} browser_channel={}",
+            seed_user_url,
+            self.browser_channel or "playwright-default",
+        )
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=not headed,
-                args=["--disable-blink-features=AutomationControlled"],
-                channel="chrome",
-            )
+            launch_options: dict[str, Any] = {
+                "headless": not headed,
+                "args": ["--disable-blink-features=AutomationControlled"],
+            }
+            if self.browser_channel:
+                launch_options["channel"] = self.browser_channel
+            browser = p.chromium.launch(**launch_options)
             context = browser.new_context(locale="zh-CN", viewport={"width": 1365, "height": 900})
             page = context.new_page()
             page.on("request", handle_request)
