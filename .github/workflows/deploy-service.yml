@@ -76,6 +76,8 @@ jobs:
       IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ github.token }}
+      BARK_DEPLOY_NOTIFY_KEY: ${{ secrets.BARK_DEPLOY_NOTIFY_KEY }}
+      DEPLOY_NOTIFY_TITLE: douyin-crawler-service部署通知
 
     steps:
       - name: Validate deployment config
@@ -149,3 +151,30 @@ jobs:
 
           docker image prune -f --filter "until=168h" >/dev/null
           REMOTE
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          set -euo pipefail
+          if [ -z "${BARK_DEPLOY_NOTIFY_KEY:-}" ]; then
+            echo "BARK_DEPLOY_NOTIFY_KEY is not configured; skip deployment notification."
+            exit 0
+          fi
+
+          notify_url="$(python - <<'PY'
+          import os
+          from urllib.parse import quote, urlencode
+
+          key = os.environ["BARK_DEPLOY_NOTIFY_KEY"].strip().strip("/")
+          title = os.environ["DEPLOY_NOTIFY_TITLE"]
+          content = f"版本{os.environ['GITHUB_SHA'][:7]}部署成功"
+          query = urlencode(
+              {
+                  "groupName": "部署通知",
+                  "icon": "https://images-sw.tos-cn-shanghai.volces.com/1772521265881.png",
+              }
+          )
+          print(f"https://api.day.app/{key}/{quote(title, safe='')}/{quote(content, safe='')}?{query}")
+          PY
+          )"
+          curl -fsS "$notify_url" >/dev/null

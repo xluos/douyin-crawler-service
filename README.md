@@ -66,6 +66,7 @@ docker compose build \
 还需要配置这个 Secret，路径是 `Settings` -> `Secrets and variables` -> `Actions` -> `Secrets`：
 
 - `DEPLOY_SSH_KEY`
+- `BARK_DEPLOY_NOTIFY_KEY`，可选，配置后部署成功会发送 Bark 通知
 
 `DEPLOY_HOST` 是部署服务器的公网 IP 或 DNS 名称，适合放在可见的 Variables 里。`DEPLOY_SSH_KEY` 是服务器私钥，不能放到可见变量里；Secret 保存后不可回显是正常设计，只能重新写入。
 
