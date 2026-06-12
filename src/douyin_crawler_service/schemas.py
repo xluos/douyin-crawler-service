@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
@@ -38,6 +38,20 @@ class JobCreate(BaseModel):
     max_comments_per_video: int = Field(default=20, ge=0, le=1000)
     include_replies: bool = False
     sleep_seconds: float = Field(default=1.0, ge=0, le=30)
+
+
+class AwemeJobCreate(BaseModel):
+    account_id: int = Field(validation_alias=AliasChoices("account_id", "accountId"))
+    aweme_id: str = Field(min_length=1, validation_alias=AliasChoices("aweme_id", "awemeId"))
+    queue_name: str = Field(default="default", min_length=1, max_length=80, validation_alias=AliasChoices("queue_name", "queueName"))
+    max_comments_per_video: int = Field(
+        default=20,
+        ge=0,
+        le=1000,
+        validation_alias=AliasChoices("max_comments_per_video", "maxCommentsPerVideo", "max_comments", "maxComments"),
+    )
+    include_replies: bool = Field(default=False, validation_alias=AliasChoices("include_replies", "includeReplies"))
+    sleep_seconds: float = Field(default=1.0, ge=0, le=30, validation_alias=AliasChoices("sleep_seconds", "sleepSeconds"))
 
 
 class JobOut(BaseModel):

@@ -12,9 +12,9 @@ from loguru import logger
 
 from .db import Database, utc_now
 from .queue import QueueManager
-from .schemas import AccountCreate, AccountOut, JobCreate, JobOut, JobResult
+from .schemas import AccountCreate, AccountOut, AwemeJobCreate, JobCreate, JobOut, JobResult
 from .settings import Settings, get_settings
-from .spider_adapter import DouyinSpiderEngine
+from .spider_adapter import DouyinSpiderEngine, aweme_url_from_id, normalize_aweme_id
 
 
 def configure_logging(settings: Settings) -> None:
@@ -253,6 +253,55 @@ def create_app() -> FastAPI:
         await queue_manager.enqueue(row["id"], row["queue_name"])
         return job_out(row)
 
+    @app.post("/aweme-jobs", response_model=JobOut)
+    async def create_aweme_job(payload: AwemeJobCreate) -> JobOut:
+        try:
+            account = db.get_account(payload.account_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if account["status"] != "active":
+            raise HTTPException(status_code=400, detail=f"account is not active: {account['status']}")
+        try:
+            aweme_id = normalize_aweme_id(payload.aweme_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        params = {
+            "mode": "aweme",
+            "aweme_id": aweme_id,
+            "max_comments_per_video": payload.max_comments_per_video,
+            "include_replies": payload.include_replies,
+            "sleep_seconds": payload.sleep_seconds,
+        }
+        result_dir = settings.job_dir / "pending"
+        row = db.create_job(
+            account_id=payload.account_id,
+            queue_name=payload.queue_name,
+            user_url=aweme_url_from_id(aweme_id),
+            params=params,
+            result_dir=str(result_dir),
+        )
+        job_result_dir = settings.job_dir / str(row["id"])
+        job_result_dir.mkdir(parents=True, exist_ok=True)
+        with db.connect() as conn:
+            conn.execute("update jobs set result_dir = ?, updated_at = ? where id = ?", (str(job_result_dir), utc_now(), row["id"]))
+        row = db.get_job(row["id"])
+        db.add_event(
+            row["id"],
+            "info",
+            "aweme job created",
+            {"queue_name": row["queue_name"], "account_id": row["account_id"], "aweme_id": aweme_id},
+        )
+        logger.info(
+            "aweme job created id={} queue={} account={} aweme={}",
+            row["id"],
+            row["queue_name"],
+            row["account_id"],
+            aweme_id,
+        )
+        await queue_manager.enqueue(row["id"], row["queue_name"])
+        return job_out(row)
+
     @app.get("/jobs", response_model=list[JobOut])
     def list_jobs(limit: int = Query(default=100, ge=1, le=500), status: str | None = None) -> list[JobOut]:
         return [job_out(row) for row in db.list_jobs(limit=limit, status=status)]
@@ -288,10 +337,26 @@ def create_app() -> FastAPI:
         }
         return JobResult(job=job_out(job), summary=read_json(result_dir / "summary.json"), files=files)
 
+    @app.get("/jobs/{job_id}/user")
+    def get_job_user(job_id: int) -> dict[str, Any] | None:
+        try:
+            job = db.get_job(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return read_json(Path(job["result_dir"]) / "user.json")
+
+    @app.get("/jobs/{job_id}/videos")
+    def get_job_videos(job_id: int, limit: int = Query(default=100, ge=1, le=10000)) -> list[dict[str, Any]]:
+        try:
+            job = db.get_job(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return read_jsonl(Path(job["result_dir"]) / "videos.jsonl", limit=limit)
+
     @app.get("/jobs/{job_id}/comments")
     def get_job_comments(
         job_id: int,
-        limit: int = Query(default=100, ge=1, le=1000),
+        limit: int = Query(default=100, ge=1, le=10000),
         with_pictures: bool = False,
     ) -> list[dict[str, Any]]:
         try:

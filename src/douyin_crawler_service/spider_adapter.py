@@ -26,6 +26,30 @@ def sec_uid_from_user_url(user_url: str) -> str:
     return user_url.rstrip("/").split("/")[-1].split("?")[0]
 
 
+def normalize_aweme_id(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("aweme_id must not be empty")
+    parsed = urlparse(value)
+    if parsed.scheme and parsed.netloc:
+        if "/video/" in parsed.path:
+            aweme_id = parsed.path.rstrip("/").split("/")[-1]
+            if aweme_id.isdigit():
+                return aweme_id
+        modal_id = (parse_qs(parsed.query).get("modal_id") or [""])[0]
+        if modal_id.isdigit():
+            return modal_id
+        raise ValueError(f"unsupported aweme url: {value}")
+    aweme_id = value.split("?")[0].strip("/")
+    if not aweme_id.isdigit():
+        raise ValueError("aweme_id must be numeric")
+    return aweme_id
+
+
+def aweme_url_from_id(aweme_id: str) -> str:
+    return f"https://www.douyin.com/video/{normalize_aweme_id(aweme_id)}"
+
+
 def write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -213,6 +237,92 @@ class DouyinSpiderEngine:
         logger.info("crawl user finished sec_uid={} summary={}", sec_uid, summary)
         return summary
 
+    def crawl_aweme(
+        self,
+        *,
+        cookie: str,
+        aweme_id: str,
+        result_dir: Path,
+        max_comments_per_video: int,
+        include_replies: bool,
+        sleep_seconds: float,
+    ) -> dict[str, Any]:
+        aweme_id = normalize_aweme_id(aweme_id)
+        video_url = aweme_url_from_id(aweme_id)
+        result_dir.mkdir(parents=True, exist_ok=True)
+        for file_name in ("user.json", "videos.jsonl", "comments.jsonl", "summary.json"):
+            output_file = result_dir / file_name
+            if output_file.exists():
+                output_file.unlink()
+
+        auth = self._build_auth(cookie)
+        douyin_api = self._api()
+        logger.info(
+            "crawl aweme started aweme={} max_comments_per_video={} include_replies={} result_dir={}",
+            aweme_id,
+            max_comments_per_video,
+            include_replies,
+            result_dir,
+        )
+
+        work_payload = douyin_api.get_work_info(auth, video_url)
+        aweme = work_payload.get("aweme_detail") or {}
+        if not aweme:
+            raise RuntimeError(
+                f"failed to fetch aweme detail aweme={aweme_id} status_code={work_payload.get('status_code')}"
+            )
+        video = self._summarize_aweme(aweme)
+        append_jsonl(result_dir / "videos.jsonl", [video])
+        write_json(result_dir / "user.json", self._summarize_aweme_author(aweme))
+        logger.info(
+            "aweme detail written aweme={} status_code={} path={}",
+            aweme_id,
+            work_payload.get("status_code"),
+            result_dir / "videos.jsonl",
+        )
+
+        total_comments = 0
+        comments_with_pictures = 0
+        if max_comments_per_video == 0:
+            (result_dir / "comments.jsonl").touch()
+            logger.info("comment fetching skipped because max_comments_per_video=0")
+        else:
+            comments = self._fetch_comments(
+                douyin_api=douyin_api,
+                auth=auth,
+                aweme_id=aweme_id,
+                max_comments=max_comments_per_video,
+                include_replies=include_replies,
+                sleep_seconds=sleep_seconds,
+            )
+            rows = [
+                self._summarize_comment(comment, parent_comment_id=comment.get("_parent_comment_id", "0"))
+                for comment in comments
+            ]
+            total_comments = len(rows)
+            comments_with_pictures = sum(1 for row in rows if row["picture_urls"])
+            append_jsonl(result_dir / "comments.jsonl", rows)
+            logger.info(
+                "comments written aweme={} count={} picture_comments={} path={}",
+                aweme_id,
+                total_comments,
+                comments_with_pictures,
+                result_dir / "comments.jsonl",
+            )
+
+        summary = {
+            "mode": "aweme",
+            "aweme_id": aweme_id,
+            "aweme_url": video_url,
+            "result_dir": str(result_dir),
+            "video_count": 1,
+            "comment_count": total_comments,
+            "comments_with_pictures": comments_with_pictures,
+        }
+        write_json(result_dir / "summary.json", summary)
+        logger.info("crawl aweme finished aweme={} summary={}", aweme_id, summary)
+        return summary
+
     def _build_auth(self, cookie: str):
         from builder.auth import DouyinAuth
 
@@ -327,6 +437,25 @@ class DouyinSpiderEngine:
             "aweme_count": user.get("aweme_count"),
             "ip_location": user.get("ip_location"),
             "raw_status_code": user_payload.get("status_code"),
+        }
+
+    def _summarize_aweme_author(self, aweme: dict[str, Any]) -> dict[str, Any]:
+        user = aweme.get("author") or {}
+        avatar = user.get("avatar_thumb") or user.get("avatar_300x300") or {}
+        return {
+            "sec_uid": user.get("sec_uid"),
+            "uid": user.get("uid"),
+            "short_id": user.get("short_id"),
+            "unique_id": user.get("unique_id"),
+            "nickname": user.get("nickname"),
+            "signature": user.get("signature"),
+            "avatar": (avatar.get("url_list") or [""])[0],
+            "following_count": user.get("following_count"),
+            "follower_count": user.get("follower_count"),
+            "max_follower_count": user.get("max_follower_count"),
+            "total_favorited": user.get("total_favorited"),
+            "aweme_count": user.get("aweme_count"),
+            "ip_location": user.get("ip_location"),
         }
 
     def _summarize_aweme(self, aweme: dict[str, Any]) -> dict[str, Any]:

@@ -149,6 +149,15 @@ class QueueManager:
         cookie = Path(account["cookie_path"]).read_text(encoding="utf-8").strip()
         logger.info("loaded account cookie account={} cookie_path={}", account["id"], account["cookie_path"])
         params = job["params"]
+        if params.get("mode") == "aweme":
+            return self.engine.crawl_aweme(
+                cookie=cookie,
+                aweme_id=str(params["aweme_id"]),
+                result_dir=Path(job["result_dir"]),
+                max_comments_per_video=int(params["max_comments_per_video"]),
+                include_replies=bool(params["include_replies"]),
+                sleep_seconds=float(params["sleep_seconds"]),
+            )
         return self.engine.crawl_user(
             cookie=cookie,
             user_url=job["user_url"],

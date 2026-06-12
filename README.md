@@ -93,6 +93,18 @@ curl -X POST http://127.0.0.1:18099/jobs \
     "sleep_seconds": 1
   }'
 
+# 创建单作品采集任务，只抓指定 aweme_id 的作品图片和评论
+curl -X POST http://127.0.0.1:18099/aweme-jobs \
+  -H 'content-type: application/json' \
+  -d '{
+    "account_id": 1,
+    "queue_name": "public",
+    "aweme_id": "7370000000000000000",
+    "max_comments_per_video": 10,
+    "include_replies": false,
+    "sleep_seconds": 1
+  }'
+
 # 查询任务
 curl http://127.0.0.1:18099/jobs/1
 
@@ -110,6 +122,10 @@ curl 'http://127.0.0.1:18099/jobs/1/comments?with_pictures=true&limit=20'
 ```
 
 `max_pages` 最小为 1，避免误触发全量翻页；`max_comments_per_video=0` 表示只抓账号和作品，不抓评论。
+
+`POST /aweme-jobs` 不会翻账号作品列表；它直接请求单个作品详情和该作品评论，结果仍写到同一组文件：
+`user.json`、`videos.jsonl`、`comments.jsonl`、`summary.json`。作品或图集图片在 `videos.jsonl` 的
+`note_image_urls` 字段，评论图片在 `comments.jsonl` 的 `picture_urls` 字段。
 
 ## 日志和排查
 
