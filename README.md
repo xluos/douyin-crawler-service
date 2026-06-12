@@ -59,7 +59,6 @@ docker compose build \
 - `DEPLOY_USER`
 - `DEPLOY_SSH_KEY`
 - `DEPLOY_PORT`，可选，不填默认 `22`
-- `GHCR_TOKEN`，用于服务器拉取 GHCR 私有镜像，需要 `read:packages` 权限
 
 默认部署目录是服务器 `/opt/douyin-crawler-service`，健康检查端口是 `18099`。workflow 会在服务器上生成 `docker-compose.deploy.yml`，其中只引用已构建好的 GHCR 镜像，不再在服务器上 build 源码。
 

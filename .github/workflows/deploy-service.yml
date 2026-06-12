@@ -29,7 +29,7 @@ jobs:
       IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
       IMAGE_LATEST: ghcr.io/${{ github.repository }}:latest
       GHCR_USERNAME: ${{ github.repository_owner }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GHCR_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
@@ -51,7 +51,6 @@ jobs:
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_USER"
           test -n "$DEPLOY_SSH_KEY"
-          test -n "$GHCR_TOKEN"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
