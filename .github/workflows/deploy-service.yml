@@ -133,6 +133,7 @@ jobs:
           COMPOSE
 
           docker compose -f docker-compose.deploy.yml pull
+          docker run --rm --user 0:0 -v "$DEPLOY_DIR/data:/target" "$IMAGE_REF" chown -R 1001:1001 /target
           docker compose -f docker-compose.deploy.yml up -d
 
           healthy=0
