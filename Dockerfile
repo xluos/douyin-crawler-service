@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 ARG PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright/python:v1.60.0-noble
 
 FROM ${PLAYWRIGHT_IMAGE} AS node-runtime
@@ -17,6 +15,7 @@ FROM node-runtime AS spider-builder
 
 ARG DOUYIN_SPIDER_REPO=https://github.com/xluos/DouYin_Spider.git
 ARG DOUYIN_SPIDER_REF=d9766c9dd0f3bf801d3dd09facb1d24f2a1c5c53
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 ENV DOUYIN_SPIDER_PATH=/opt/DouYin_Spider
 
@@ -29,7 +28,8 @@ RUN git init "${DOUYIN_SPIDER_PATH}" \
     && git remote add origin "${DOUYIN_SPIDER_REPO}" \
     && git fetch --depth 1 origin "${DOUYIN_SPIDER_REF}" \
     && git checkout --detach FETCH_HEAD \
-    && npm ci --omit=dev --no-audit --no-fund --registry=https://registry.npmmirror.com \
+    && npm install --omit=dev --package-lock=false --no-audit --no-fund --registry="${NPM_REGISTRY}" \
+    && node -e "require('canvas'); require('jsrsasign')" \
     && npm cache clean --force \
     && rm -rf .git
 
@@ -42,16 +42,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SERVICE_HOST=0.0.0.0 \
     SERVICE_PORT=18099 \
     BROWSER_CHANNEL= \
+    NODE_PATH=/opt/DouYin_Spider/node_modules \
     PATH=/app/.venv/bin:$PATH
 
 WORKDIR /app
 
 COPY --from=spider-builder --chown=pwuser:pwuser /opt/DouYin_Spider /opt/DouYin_Spider
 COPY pyproject.toml uv.lock README.md ./
-COPY src ./src
 
 RUN python -m pip install --no-cache-dir uv==0.9.9 \
-    && uv sync --locked --no-dev --no-editable --compile-bytecode \
+    && uv sync --locked --no-dev --no-editable --no-install-project --compile-bytecode \
+    && uv cache clean
+
+COPY src ./src
+
+RUN uv sync --locked --no-dev --no-editable --compile-bytecode \
+    && python -c "import execjs; print(execjs.get().name)" \
     && uv cache clean \
     && mkdir -p /app/data \
     && chown -R pwuser:pwuser /app/data
