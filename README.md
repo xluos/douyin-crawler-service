@@ -44,7 +44,14 @@ docker compose build \
 
 ## GitHub Actions 自动发布
 
-`.github/workflows/deploy-service.yml` 会在 `main` 分支 push 后自动发布到服务器，逻辑参考 `outfit-master`：打包源码、SSH 上传、服务器上 `docker compose up -d --build`、最后检查 `/health`。
+`.github/workflows/deploy-service.yml` 会在 `main` 分支 push 后自动发布到服务器，逻辑参考 `outfit-master`，但部署方式改成更适合这个服务的镜像流：
+
+1. GitHub Actions 构建 Docker 镜像。
+2. 推送到 GitHub Container Registry：`ghcr.io/xluos/douyin-crawler-service:<commit-sha>` 和 `latest`。
+3. SSH 到服务器。
+4. 服务器登录 GHCR，拉取指定 commit 镜像。
+5. `docker compose up -d` 启动服务。
+6. 检查 `http://127.0.0.1:18099/health`。
 
 需要在 GitHub 仓库配置这些 Secrets：
 
@@ -52,8 +59,9 @@ docker compose build \
 - `DEPLOY_USER`
 - `DEPLOY_SSH_KEY`
 - `DEPLOY_PORT`，可选，不填默认 `22`
+- `GHCR_TOKEN`，用于服务器拉取 GHCR 私有镜像，需要 `read:packages` 权限
 
-默认部署目录是服务器 `/opt/douyin-crawler-service`，健康检查端口是 `18099`。如果服务器上需要覆盖端口、镜像源或数据挂载，可以在部署目录维护 `docker-compose.prod.yml`，workflow 会自动叠加它。
+默认部署目录是服务器 `/opt/douyin-crawler-service`，健康检查端口是 `18099`。workflow 会在服务器上生成 `docker-compose.deploy.yml`，其中只引用已构建好的 GHCR 镜像，不再在服务器上 build 源码。
 
 ## API
 
