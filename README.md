@@ -96,7 +96,8 @@ curl -X POST http://127.0.0.1:18099/jobs \
     "sleep_seconds": 1
   }'
 
-# 创建单作品采集任务，只抓指定 aweme_id 的作品图片和评论
+# 创建单作品采集任务，只抓指定 aweme_id 的作品图片和评论。
+# aweme_id 可传纯数字 ID、/video/ 长链、/note/ 图文长链，或包含 v.douyin.com 短链的整段分享文案。
 curl -X POST http://127.0.0.1:18099/aweme-jobs \
   -H 'content-type: application/json' \
   -d '{

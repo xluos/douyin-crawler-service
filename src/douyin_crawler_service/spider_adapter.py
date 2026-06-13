@@ -1,10 +1,14 @@
 import json
+import re
+import socket
 import sys
 import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+import requests
+import urllib3.util.connection
 from loguru import logger
 from playwright.sync_api import sync_playwright
 
@@ -13,6 +17,17 @@ DEFAULT_SEED_USER_URL = (
     "https://www.douyin.com/user/"
     "MS4wLjABAAAAEpmH344CkCw2M58T33Q8TuFpdvJsOyaZcbWxAMc6H03wOVFf1Ow4mPP94TDUS4Us"
 )
+DOUYIN_SHARE_URL_RE = re.compile(r"https?://[^\s]+")
+DOUYIN_SHARE_URL_TRAILING_CHARS = "，。,.!！?？;；:：)）]】}\"'"
+DOUYIN_WEB_HEADERS = {
+    "user-agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    )
+}
+REQUESTS_DEFAULT_TIMEOUT = (15.0, 45.0)
+REQUESTS_TIMEOUT_PATCH_ATTR = "_douyin_crawler_default_timeout_patched"
+URLLIB3_IPV4_PATCH_ATTR = "_douyin_crawler_ipv4_patched"
 
 
 def normalize_user_url(value: str) -> str:
@@ -26,21 +41,99 @@ def sec_uid_from_user_url(user_url: str) -> str:
     return user_url.rstrip("/").split("/")[-1].split("?")[0]
 
 
+def install_requests_default_timeout(timeout: tuple[float, float] = REQUESTS_DEFAULT_TIMEOUT) -> None:
+    original_request = requests.sessions.Session.request
+    if getattr(original_request, REQUESTS_TIMEOUT_PATCH_ATTR, False):
+        return
+
+    def request_with_default_timeout(self, method, url, **kwargs):
+        kwargs.setdefault("timeout", timeout)
+        return original_request(self, method, url, **kwargs)
+
+    setattr(request_with_default_timeout, REQUESTS_TIMEOUT_PATCH_ATTR, True)
+    requests.sessions.Session.request = request_with_default_timeout
+
+
+def install_requests_ipv4_only() -> None:
+    allowed_gai_family = urllib3.util.connection.allowed_gai_family
+    if getattr(allowed_gai_family, URLLIB3_IPV4_PATCH_ATTR, False):
+        return
+
+    def allowed_ipv4_family():
+        return socket.AF_INET
+
+    setattr(allowed_ipv4_family, URLLIB3_IPV4_PATCH_ATTR, True)
+    urllib3.util.connection.allowed_gai_family = allowed_ipv4_family
+
+
+def is_douyin_share_host(host: str) -> bool:
+    host = host.lower()
+    return (
+        host == "iesdouyin.com"
+        or host.endswith(".iesdouyin.com")
+        or host == "douyin.com"
+        or host.endswith(".douyin.com")
+    )
+
+
+def extract_douyin_share_url(value: str) -> str | None:
+    for match in DOUYIN_SHARE_URL_RE.finditer(value):
+        url = match.group(0).rstrip(DOUYIN_SHARE_URL_TRAILING_CHARS)
+        if is_douyin_share_host(urlparse(url).netloc):
+            return url
+    return None
+
+
+def resolve_douyin_short_url(url: str, *, timeout: float = 15.0) -> str:
+    parsed = urlparse(url)
+    if parsed.netloc.lower() != "v.douyin.com":
+        return url
+    install_requests_ipv4_only()
+    try:
+        response = requests.get(
+            url,
+            allow_redirects=False,
+            headers=DOUYIN_WEB_HEADERS,
+            stream=True,
+            timeout=timeout,
+        )
+        return response.headers.get("location") or response.url
+    except requests.RequestException as exc:
+        raise ValueError(f"failed to resolve douyin short url: {url}") from exc
+    finally:
+        if "response" in locals():
+            response.close()
+
+
+def aweme_id_from_douyin_url(url: str) -> str | None:
+    parsed = urlparse(url)
+    path_parts = [part for part in parsed.path.split("/") if part]
+    for marker in ("video", "note"):
+        if marker in path_parts:
+            index = path_parts.index(marker)
+            if index + 1 < len(path_parts):
+                aweme_id = path_parts[index + 1]
+                if aweme_id.isdigit():
+                    return aweme_id
+    modal_id = (parse_qs(parsed.query).get("modal_id") or [""])[0]
+    if modal_id.isdigit():
+        return modal_id
+    return None
+
+
 def normalize_aweme_id(value: str) -> str:
     value = value.strip()
     if not value:
         raise ValueError("aweme_id must not be empty")
-    parsed = urlparse(value)
+    input_value = extract_douyin_share_url(value) or value
+    parsed = urlparse(input_value)
     if parsed.scheme and parsed.netloc:
-        if "/video/" in parsed.path:
-            aweme_id = parsed.path.rstrip("/").split("/")[-1]
-            if aweme_id.isdigit():
-                return aweme_id
-        modal_id = (parse_qs(parsed.query).get("modal_id") or [""])[0]
-        if modal_id.isdigit():
-            return modal_id
-        raise ValueError(f"unsupported aweme url: {value}")
-    aweme_id = value.split("?")[0].strip("/")
+        resolved_url = resolve_douyin_short_url(input_value)
+        aweme_id = aweme_id_from_douyin_url(resolved_url)
+        if aweme_id:
+            return aweme_id
+        raise ValueError(f"unsupported aweme url: {input_value}")
+    aweme_id = input_value.split("?")[0].strip("/")
     if not aweme_id.isdigit():
         raise ValueError("aweme_id must be numeric")
     return aweme_id
@@ -92,6 +185,8 @@ class DouyinSpiderEngine:
             raise FileNotFoundError(f"DouYin_Spider path does not exist: {self.spider_path}")
         if str(self.spider_path) not in sys.path:
             sys.path.insert(0, str(self.spider_path))
+        install_requests_ipv4_only()
+        install_requests_default_timeout()
 
     def generate_anonymous_cookie(
         self,
